@@ -1,0 +1,11 @@
+#!/bin/bash
+
+#add iterations and remove bins
+maxiter=`grep -i "max_total_iterations" west.cfg | awk '{print $NF}'`
+#the -1 in $NF-1 is the "margin" of bins to be removed
+nfrag=`./get-max-seg-cum.py $maxiter 0 | awk -v maxiter=$maxiter '($1<=maxiter) {print $NF-2}' | tail -n1`
+echo $nfrag
+awk -v new=$nfrag -f change-minfrag.awk system.py > system2.py
+awk -v nadd=50 -f add-iterations.awk west.cfg > west2.cfg
+cp system2.py system.py
+cp west2.cfg west.cfg

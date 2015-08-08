@@ -1,0 +1,8 @@
+FRAG cd hepb-capsid-wt-dimer-cd-ca-only-all-sites.pdb
+FRAG ab hepb-capsid-wt-dimer-ab-ca-only-all-sites.pdb
+READ RESTART :restfile;
+RXNCOORD RESTART 1 0 3415.78 8.0 1.5 0.2
+contact-map-all-sites-ab-ab
+contact-map-all-sites-ab-cd
+contact-map-all-sites-cd-cd 
+END

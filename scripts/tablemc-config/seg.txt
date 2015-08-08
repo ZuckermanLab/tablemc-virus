@@ -1,0 +1,14 @@
+FRAG cd hepb-capsid-wt-dimer-cd-ca-only-all-sites.pdb
+FRAG ab hepb-capsid-wt-dimer-ab-ca-only-all-sites.pdb
+READ RESTART parent.rest
+END
+seg.dcd seg.dat seg.rest
+10000000 1000000 0 100000 0 0 300.0
+0 1 1258.39 100 0
+0.5 0.5
+0.5 2.0
+%s-%s-0.5-5-15-10.dat
+ab ab 0.3
+ab cd 0.3
+cd cd 0.3
+END

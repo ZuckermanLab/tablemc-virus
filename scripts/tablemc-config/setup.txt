@@ -1,0 +1,7 @@
+FRAG cd hepb-capsid-wt-dimer-cd-ca-only-all-sites.pdb
+FRAG ab hepb-capsid-wt-dimer-ab-ca-only-all-sites.pdb
+INSERT ab 105
+INSERT cd 105
+LATTICE RANDOM 1258.39 250.0
+WRITE RESTART lattice.rest
+END
