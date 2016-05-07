@@ -946,20 +946,22 @@ void table::write_dx(char * fname, double phi, double theta, double psi, double 
 }
 
 
-/*void table::write_dx_exact(char * fname, double phi, double theta, double psi, double xmax, double dx)
+void table::write_dx_exact(char * fname, double phi, double theta, double psi, double xmax, double dx)
 {
     double  r, sphtheta, sphphi, x[3], q1[4], q2[4], en;
     int nx,i,j,k;
     long int points;
-    forcefield * ffield;
+    go_model_info * go_model;
     fragmenttype * frag1;
     fragmenttype * frag2;
     double * coords1;
     double * coords2;
     FILE * output;
-    ffield = new forcefield(hdr.forcefield);
-    frag1=new fragmenttype("\0",hdr.ref_frag_fname,ffield);
-    frag2=new fragmenttype("\0",hdr.other_frag_fname,ffield);
+    go_model = new go_model_info();
+    go_model->read_file(hdr.go_model_map_fname);
+    go_model->set_parameters(&hdr.go_params);
+    frag1=new fragmenttype("\0",hdr.ref_frag_fname);
+    frag2=new fragmenttype("\0",hdr.other_frag_fname);
     coords1=(double *) malloc(3*frag1->natom*sizeof(double));
     coords2=(double *) malloc(3*frag2->natom*sizeof(double));
     output=fopen(fname,"w");
@@ -995,10 +997,10 @@ void table::write_dx(char * fname, double phi, double theta, double psi, double 
                 x[2]=-xmax+k*dx;
                 r=sqrt(x[0]*x[0]+x[1]*x[1]+x[2]*x[2]);
                 cart_to_sph(&x[0],r,&sphtheta,&sphphi);
-                en=get_pair_energy(ffield,frag1,frag2,coords1,coords2,r,sphtheta,sphphi,phi,theta,psi);
+                en=get_pair_energy(go_model,frag1,frag2,coords1,coords2,r,sphtheta,sphphi,phi,theta,psi);
                 fprintf(output,"%20.10e",en);
                 if ((points%3)==0) fprintf(output,"\n");
-                if ((points%1000000)==0) {
+                if ((points%1000)==0) {
                     printf("%ld points written\n",points);
                     fflush(output);
                 }
@@ -1016,8 +1018,7 @@ void table::write_dx(char * fname, double phi, double theta, double psi, double 
     free(coords2);
     delete frag1;
     delete frag2;
-    delete ffield;
-}*/
+}
 
 //This visualizes in orientation space.  It is a 3-dimensional ball of radius 180 degrees. A point within the sphere represents
 //a rotation along the axis connecting the point to the origin, by an angle equal to the distance of the point from the origin.

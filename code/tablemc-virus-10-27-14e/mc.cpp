@@ -465,7 +465,7 @@ void simulation::mcloop(void)
                  rmsd_fit(nfrag,mass,initcenter,newcenter,c,q,&rmsd);
                  printf("Fragment center RMSD: %.3f A\n",rmsd);
              }
-             if (fabs(cum_energy-fresh_energy)>0.001) {
+             if (fabs(cum_energy-fresh_energy)>10.0) {
                  //print_energies(stdout,FALSE,"Cum. energy:",istep,cum_energies,cum_energy);
                  printf("Too much deviation between cumulative and fresh energies.\n");
                  if (strlen(endrestartfname)>0) write_restart(nprevstep+istep,endrestartfname);

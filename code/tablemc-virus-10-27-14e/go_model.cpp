@@ -236,9 +236,8 @@ double go_model_info::energy(int pbc, double halfboxsize, double boxsize, go_mod
     int ientry,k,ifragatom,jfragatom,iexp,ires,jres;
     double a,am,an,native_distance2;
     entot=0.0;
-
-    for (ifragatom=0; ifragatom<ifragtype->natom; ifragatom++)
-        for (jfragatom=0; jfragatom<jfragtype->natom; jfragatom++) {
+    for (ifragatom=0; ifragatom<ifragtype->natom; ifragatom++) if (ifragtype->atoms[ifragatom].is_site)
+        for (jfragatom=0; jfragatom<jfragtype->natom; jfragatom++) if (jfragtype->atoms[jfragatom].is_site) {
             r2=pbc_distance2(pbc,halfboxsize,boxsize,&icoords[3*ifragatom],&jcoords[3*jfragatom]);
             if (r2<=0) {
                 printf("go_model_info::energy: error, ifragatom=%d jfragatom=%d r2=%.2f\n",ifragatom,jfragatom,r2);

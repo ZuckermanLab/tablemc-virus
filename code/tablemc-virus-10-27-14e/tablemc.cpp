@@ -84,6 +84,10 @@ int main(int argc, char * argv[])
         sim=new simulation(argv[2]);
         sim->comparison_test();
         delete sim;
+    } else if (strcasecmp(argv[1],"dx-exact")==0) {
+        newtable=new table(argv[2],FALSE);
+        newtable->write_dx_exact(argv[8],atof(argv[3]),atof(argv[4]),atof(argv[5]),atof(argv[6]),atof(argv[7]));
+        delete newtable;
     } else if (strncasecmp(argv[1],"dx",2)==0) {
         newtable=new table(argv[2],FALSE);
         newtable->write_dx(argv[8],atof(argv[3]),atof(argv[4]),atof(argv[5]),atof(argv[6]),atof(argv[7]));
