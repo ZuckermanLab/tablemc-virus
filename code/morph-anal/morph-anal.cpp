@@ -82,6 +82,25 @@ void read_template(char * fname, int * ntmpfrag, int * * tmpfragtypes, double * 
     fclose(f);
 }
 
+void test_graph(void) {
+    graph * g;
+    long int ids[5],ncomp;
+    subset v;
+    g = new graph(5);
+    g->add_edge(0,1);
+    g->add_edge(0,2);
+    g->add_edge(1,2);
+    g->add_edge(2,3);
+    g->add_edge(3,4);
+    v.init(5);
+    v+=0;
+    v+=1;
+    v+=2;
+    //v+=3;
+    v+=4;
+    ncomp=g->connected_components(v,ids);
+    printf("%ld %ld %ld %ld %ld",ids[0],ids[1],ids[2],ids[3],ids[4]);
+}
 //arguments: nfrag boxsize template traj output
 int main(int argc, char * argv[])
 {
@@ -101,9 +120,15 @@ int main(int argc, char * argv[])
     int * mapping;
     long long int istep,iframe;
     double rmsd;
+    graph * contactgraph;
     clusters * clus;
     rigid_trans trans;
     int ifrag,i,j,k;
+    //test_graph();
+    //die();
+
+    //argv index  :0          1     2       3      4           5            6             7    8      [9]
+    //command line:morph-anal nfrag boxsize cutoff anglecutoff templatefile contactgraph traj output [pdb_output]
     nfrag=atoi(argv[1]);
     ntemplatefrag=120;
     boxsize=atof(argv[2]);
@@ -117,18 +142,18 @@ int main(int argc, char * argv[])
         die();
     }*/
     //trim_string(argv[4]);
-    traj=fopen(argv[6],"r");
+    traj=fopen(argv[7],"r");
     if (traj==NULL) {
         printf("Could not open file %s\n",argv[6]);
         die();
     }
-    output=fopen(argv[7],"w");
+    output=fopen(argv[8],"w");
     if (output==NULL) {
         printf("Could not open file %s\n",argv[7]);
         die();
     }
     pdb_output=NULL;
-    if (argc>6) pdb_output=fopen(argv[8],"w");
+    if (argc>9) pdb_output=fopen(argv[9],"w");
     center=(double *) checkalloc(3*nfrag,sizeof(double));
     orient=(double *) checkalloc(4*nfrag,sizeof(double));
     fragtypes=(int *) checkalloc(nfrag,sizeof(int));
@@ -137,20 +162,22 @@ int main(int argc, char * argv[])
     mapping=(int *) checkalloc(nfrag,sizeof(int));
     for (ifrag=0; ifrag<nfrag; ifrag++) mapping[ifrag]=ifrag; //default mapping
     read_template(argv[5],&ntemplatefrag,&tmpfragtypes,&templatecenter,&templateorient);
+    contactgraph = new graph(ntemplatefrag);
+    contactgraph->read_from_file(argv[6]);
     /*if (ntemplatefrag!=nfrag) {
         printf("trajectory does not match template, nfrag = %d, ntemplatefrag = %d\n",nfrag,ntemplatefrag);
         die();
     }*/
     //fclose(templatefile);
     iframe=1;
-    printf("Conducting analysis with distance cutoff %.2f A and angle cutoff %.2f degrees.\n",cutoff,anglecutoff*RAD_TO_DEG);
     while (!feof(traj)) {
         read_frame_quat(traj,nfrag,&istep,fragtypes,center,orient);
 
         //separate half the fragments by translating them along the z-axis by 20 A for testing purposes
         //for (ifrag=nfrag/2; ifrag<nfrag; ifrag++) center[3*ifrag+2]+=20;
         //printf("Step %lld\n",istep);
-        clus=new clusters(pbc,boxsize,halfboxsize,nfrag,fragtypes,center,orient,ntemplatefrag,tmpfragtypes,templatecenter,templateorient,cutoff,anglecutoff);
+        clus=new clusters(pbc,boxsize,halfboxsize,nfrag,fragtypes,center,orient,
+                          ntemplatefrag,tmpfragtypes,templatecenter,templateorient,contactgraph,cutoff,anglecutoff);
         //fprintf(output,"Step %lld\n",istep);
         clus->report(iframe,output);
         if (pdb_output!=NULL) clus->write_pdb_frame(iframe,center,pdb_output);
@@ -163,6 +190,7 @@ int main(int argc, char * argv[])
         //fprintf(output,"%lld %.3f\n",istep,rmsd);
         //break;
     }
+    delete contactgraph;
     fclose(traj);
     fclose(output);
     if (pdb_output!=NULL) fclose(pdb_output);

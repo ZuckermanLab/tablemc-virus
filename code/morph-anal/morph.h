@@ -2,6 +2,7 @@
 #define MORPH_H_INCLUDED
 
 #include <stdio.h>
+#include "graph.h"
 //fragment types.  We hard code these for now.
 #define NFRAGTYPES  2
 //static const int nfragtypes = 2;
@@ -38,19 +39,19 @@ struct clusters {
     double * mindist;
     double * angle;
     cluster_info * info;
-    bool * occupied;
-    bool * monomers;
     //bool done;
-    clusters(bool pbc, double boxsize, double halfboxsize, int _nfrag, int * fragtypes, double * center, double * orient, int _ntmpfrag, int * tmpfragtypes, double * tmpcenter, double * tmporient, double cutoff, double anglecutoff);
+    clusters(bool pbc, double boxsize, double halfboxsize, int _nfrag, int * fragtypes, double * center, double * orient,
+        int _ntmpfrag, int * tmpfragtypes, double * tmpcenter, double * tmporient, graph * tmpcontacts, double cutoff, double anglecutoff);
     void report(long int iframe, FILE * output);
     void write_pdb_frame(long long int istep, double * center, FILE * output);
     void write_xyz_frame(long long int istep, double * center, FILE * output);
     void get_mindist(int pbc, double halfboxsize, double boxsize, double * center, double * orient, double * tmpcenter, double * tmporient);
-    void identify_monomers(bool pbc, double boxsize, double halfboxsize, double * center, double cutoff);
     ~clusters();
 private:
     void find_transformations(bool pbc, double boxsize, double halfboxsize, double * center, double * orient, double * tmpcenter, double * tmporient);
-    void reassign(bool pbc, double boxsize, double halfboxsize, int * fragtypes, double * center, double * orient, int * tmpfragtypes, double * tmpcenter, double * tmporient, double cutoff, double anglecutoff, FILE * debug_output);
+    void reassign(bool pbc, double boxsize, double halfboxsize, int * fragtypes, double * center, double * orient,
+        int * tmpfragtypes, double * tmpcenter, double * tmporient, graph * tmpcontacts, double cutoff, double anglecutoff, FILE * debug_output);
+
     void force_fit_fragment(bool pbc, double boxsize, double halfboxsize, int ifrag, double * center, double * orient, int itmpfrag, double * tmpcenter, double * tmporient, int iclus);
     void force_fit_fragment(bool pbc, double boxsize, double halfboxsize, int ifrag, int jfrag, double * center, double * orient, int itmpfrag, int jtmpfrag, double * tmpcenter, double * tmporient, int iclus);
     void add_new_cluster(bool pbc, double boxsize, double halfboxsize, int ifrag, int * fragtypes, double * center, double * orient, int * tmpfragtypes, double * tmpcenter, double * tmporient);

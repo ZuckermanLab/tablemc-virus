@@ -55,12 +55,19 @@ void die(void)
 }
 #endif
 
+#ifdef __unix__
+double convtime(struct timeval time)
+{
+    return (double) time.tv_sec + ((double) time.tv_usec) * 1e-6;
+}
+#endif
+
 void * checkalloc(size_t count, size_t size) {
     void * p;
     p=calloc(count,size);
     if (p==NULL) {
         printf("Memory allocation error.\n");
-        exit(1);
+        die();
     }
     return p;
 }
@@ -70,7 +77,7 @@ void * checkrealloc(void * ptr, size_t count, size_t size) {
     ptr2=realloc(ptr,count*size);
     if (ptr2==NULL) {
         printf("Memory allocation error.\n");
-        exit(1);
+        die();
     }
     return ptr2;
 }
@@ -98,24 +105,18 @@ char yesno(int x)
     if (x) return 'Y'; else return 'N';
 }
 
-void strlower(char * s)
+void strupper(char * s, unsigned int max)
 {
     int i;
-    for (i=0; i<strlen(s); i++) s[i]=tolower(s[i]);
+    for (i=0; ((i<=max) && (i<strlen(s))); i++) s[i]=toupper(s[i]);
 }
 
-//thig might have to be rewritten to accomodate two letter symbols
-double atom_mass(char element) {
-    switch (element) {
-        case 'H': return 1.008; break;
-        case 'C': return 12.011; break;
-        case 'O': return 15.9994; break;
-        case 'N': return 14.007; break;
-        case 'S': return 32.066; break;
-        default: return 0; break;
-    }
-}
 
+void strlower(char * s, unsigned int max)
+{
+    int i;
+    for (i=0; ((i<=max) && (i<strlen(s))); i++) s[i]=tolower(s[i]);
+}
 
 /*void trim_leading_whitespace(char * s1, char * s2, char * n2)
 {
@@ -133,6 +134,7 @@ char * read_multiline(FILE * input)
     bool endseq;
     int lseq;
     char buffer[255];
+    memset(buffer,0,sizeof(buffer));
     seq=(char *) checkalloc(1,sizeof(char));
     *seq='\0';
     lseq=0;
@@ -151,6 +153,96 @@ char * read_multiline(FILE * input)
         strncat(seq,buffer,strlen(buffer)+1);
     } while (!endseq);
     return seq;
+}
+
+
+
+unsigned long read_random_seed(void)
+{
+    FILE * random;     
+    unsigned long seed;           
+    //use urandom to avoid blocking
+    random=fopen("/dev/urandom","rb");
+    fread(&seed,sizeof(seed),1,random);     
+    fclose(random);
+    return seed;
+}
+
+//used to pre-count the number of residues in order to instantiate the all-atom region early
+//I got this from stackoverflow.com
+int count_words(char * str) {
+    if (str==NULL) return 0;
+    bool inSpaces = true;
+   int numWords = 0;
+   //this is potentially unsafe, could run off the end of the string
+   while (*str != '\0')
+   {
+      if (std::isspace(*str))
+      {
+         inSpaces = true;
+      }
+      else if (inSpaces)
+      {
+         numWords++;
+         inSpaces = false;
+      }
+
+      ++str;
+   }
+
+   return numWords;
+}
+
+
+void subset::print(char * name)
+{
+        long int i;
+        printf("%s = ",name);
+        for (i=0; i<n; i++) if ((*this)[i]) printf("%ld,",i+1);
+        printf("\n");
+}
+
+//Parse a string containing something of the form 1,3,5,7-9 and set the corresponding flags.
+//Integers mentioned go from 1 to count. flags is zero-based, so 1 corresponds to flags[0], etc.
+void subset::parse_int_list(char * str)
+{
+    char * token;
+    char * tokenend;
+    char * hyphen;
+    //here "n" is the number of possible items in the subset
+    int start,end,i,m;
+    //for (i=0; i<count; i++) flags[i]=false;
+    init(n); //zero out any previous set
+    if ((strlen(str)==0) || (strstr(str,"NONE")!=NULL) || (strstr(str,"none")!=NULL)) return; //empty set 
+    if ((strstr(str,"ALL")!=NULL) || (strstr(str,"all")!=NULL)) { //universal set
+        for (i=0; i<n; i++) (*this)+=i;
+        return;
+    }
+    token=str;
+    while (true) {
+        tokenend=strchr(token,',');
+        hyphen=strchr(token,'-');
+        if ((hyphen!=NULL) && ((tokenend==NULL) || (hyphen<tokenend))) { //this token is of the form m-n
+            m=sscanf(token,"%d-%d",&start,&end);
+            if ((m<2) || (start<1) || (start>n) || (end<1) || (end>n)) {
+                printf("Invalid selection.\n");
+                exit(1);
+            }
+            start--; //convert to zero based
+            end--;
+            for (i=start; i<=end; i++) (*this)+=i;
+        } else { //it's a single integer
+            m=sscanf(token,"%d",&i);
+            if ((m<1) || (i<1) || (i>n)) {
+                printf("Invalid selection.\n");
+                exit(1);
+            }
+            i--; //zero-based
+            (*this)+=i;
+        }
+        if (tokenend==NULL) break; //no more tokens
+        token=tokenend+1; //advance past the comma
+    }
 }
 
 //This code from http://gnuradio.org/redmine/projects/gnuradio/repository/revisions/1cb52da49230c64c3719b4ab944ba1cf5a9abb92/entry/gr-digital/lib/digital_crc32.cc

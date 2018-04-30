@@ -54,7 +54,8 @@ void pdb_coordinate(double val, char * str)
     free(weights);
 }*/
 //Find clusters (could be partially formed capsids)
-clusters::clusters(bool pbc, double boxsize, double halfboxsize, int _nfrag, int * fragtypes, double * center, double * orient, int _ntmpfrag, int * tmpfragtypes, double * tmpcenter, double * tmporient, double cutoff, double anglecutoff)
+clusters::clusters(bool pbc, double boxsize, double halfboxsize, int _nfrag, int * fragtypes, double * center, double * orient,
+    int _ntmpfrag, int * tmpfragtypes, double * tmpcenter, double * tmporient, graph * tmpcontacts, double cutoff, double anglecutoff)
 {
     int ifrag,iclus,inewfrag,jnewfrag,iter,total_iter,nassigned;
     bool done,conv,preiter;
@@ -104,7 +105,7 @@ clusters::clusters(bool pbc, double boxsize, double halfboxsize, int _nfrag, int
 #ifdef DEBUG
             fprintf(debug_output,"REMARK frame %d\n",total_iter);
 #endif
-            reassign(pbc,boxsize,halfboxsize,fragtypes,center,orient,tmpfragtypes,tmpcenter,tmporient,thecutoff,anglecutoff,debug_output);
+            reassign(pbc,boxsize,halfboxsize,fragtypes,center,orient,tmpfragtypes,tmpcenter,tmporient,tmpcontacts,thecutoff,anglecutoff,debug_output);
 #ifdef DEBUG
             fprintf(debug_output,"END\n");
             fflush(debug_output);
@@ -118,9 +119,8 @@ clusters::clusters(bool pbc, double boxsize, double halfboxsize, int _nfrag, int
             nassigned=0;
             for (ifrag=0; ifrag<nfrag; ifrag++) if (cluster_id[ifrag]>=0) nassigned++;
             if (nassigned==0) {
-                printf("lost all assignments at iter=%d total_iter=%d, reassigning first fragment\n",iter,total_iter);
-                nclusters=0;
-                add_new_cluster(pbc,boxsize,halfboxsize,0,fragtypes,center,orient,tmpfragtypes,tmpcenter,tmporient);
+                printf("error: lost all assignments at iter=%d total_iter=%d\n",iter,total_iter);
+                die();
             }
             //check convergence
             //if (!preiter) {
@@ -171,7 +171,6 @@ clusters::clusters(bool pbc, double boxsize, double halfboxsize, int _nfrag, int
     free(old_mapping);
     sort_clusters(NULL);
     get_mindist(pbc,halfboxsize,boxsize,center,orient,tmpcenter,tmporient);
-    identify_monomers(pbc,halfboxsize,boxsize,center,60.0);
 #ifdef DEBUG
     fclose(debug_output);
 #endif
@@ -181,7 +180,7 @@ clusters::~clusters()
 {
     int iclus;
     if (info!=NULL) {
-        /*for (iclus=0find_transformations(pbc,boxsize,halfboxsize,center,tmpcenter);; iclus<nclusters; iclus++) {
+        /*for (iclus=find_transformations(pbc,boxsize,halfboxsize,center,tmpcenter);; iclus<nclusters; iclus++) {
             free(info[iclus].fragments);
             free(info[iclus].tmpfragments);
             }*/
@@ -350,13 +349,15 @@ void clusters::find_transformations(bool pbc, double boxsize, double halfboxsize
     double * mapped_from_template;
     double * mapped_from_frame;
     double * weights;
-    int * backmap; //gives the fragment for each "actual"
+    //int * backmap; //gives the fragment for each "actual"
     int iclus, ifrag, itmpfrag,i,k;
     double dx[3],q[4];
+    //make sure "info" is properly allocated
+    info=(cluster_info *) checkrealloc(info,nclusters,sizeof(cluster_info));
     mapped_from_template=(double *) checkalloc(3*ntmpfrag,sizeof(double));
     mapped_from_frame=(double *) checkalloc(3*ntmpfrag,sizeof(double));
     weights=(double *) checkalloc(ntmpfrag,sizeof(double));
-    backmap=(int *) checkalloc(ntmpfrag,sizeof(int));
+    //backmap=(int *) checkalloc(ntmpfrag,sizeof(int));
     for (iclus=0; iclus<nclusters; iclus++) {
         //clear out the mappedcoords array, put a nan in so that bad stuff can be detected
         for (itmpfrag=0; itmpfrag<3*ntmpfrag; itmpfrag++) mapped_from_template[itmpfrag]=NAN;
@@ -407,7 +408,7 @@ void clusters::find_transformations(bool pbc, double boxsize, double halfboxsize
     free(mapped_from_template);
     free(mapped_from_frame);
     free(weights);
-    free(backmap);
+    //free(backmap);
 }
 
 
@@ -427,16 +428,19 @@ int compare_entries(const void * e1, const void * e2)
     return 0;
 }
 #define MAX_CLUSTER 10
-void clusters::reassign(bool pbc, double boxsize, double halfboxsize, int * fragtypes, double * center, double * orient, int * tmpfragtypes, double * tmpcenter, double * tmporient, double cutoff, double anglecutoff, FILE * debug_output)
+void clusters::reassign(bool pbc, double boxsize, double halfboxsize, int * fragtypes, double * center, double * orient,
+            int * tmpfragtypes, double * tmpcenter, double * tmporient, graph * tmpcontacts, double cutoff, double anglecutoff, FILE * debug_output)
 {
     double * transtemplates;
     bool * assigned;
     double com[3],v[3],dx[3],rotmatrix[3][3],cutoff2,dist2,cacutoff,q1[4],cangle;
-    int iclus, ifrag,itmpfrag,index,closest,i,k;
+    int iclus, ifrag,itmpfrag,index,closest,i,k,ncomp,icomp;
     const char * pdbatomfmt = "ATOM  %5d %4s %3s %c%4d    %8s%8s%8s%6.2f%6.2f      %-4d\n";
     char buffer[255],xval[9],yval[9],zval[9];
     vector<entry> entries;
     entry e;
+    subset tmpfragments_in_clus;
+    long int * comps;
     entries.reserve(nfrag);
     transtemplates=(double *) checkalloc(3*nclusters*ntmpfrag,sizeof(double));
     assigned=(bool *) checkalloc(nclusters*ntmpfrag,sizeof(bool));
@@ -516,8 +520,39 @@ void clusters::reassign(bool pbc, double boxsize, double halfboxsize, int * frag
             assigned[index]=true;
         }
     }
+    //For each cluster, see if the template fragments that are mapped as part of that cluster
+    //constitute a connected subgraph of tmpcontacts (the contact graph for the template).
+    //If not, divide the subgraph into connected components, and break up the cluster accordingly.
+    tmpfragments_in_clus.init(ntmpfrag);
+    comps = (long int *) checkalloc(ntmpfrag,sizeof(long int));
+    iclus=0;
+    //for (iclus=0; iclus<nclusters; iclus++) {
+    //use a while loop here because the number of clusters may be increasing as we go along.
+    while (iclus<nclusters) {
+        tmpfragments_in_clus.clear();
+        for (ifrag=0; ifrag<nfrag; ifrag++) {
+            if (cluster_id[ifrag]==iclus) tmpfragments_in_clus+=mapping[ifrag];
+        }
+        ncomp=tmpcontacts->connected_components(tmpfragments_in_clus,comps);
+        //if this "cluster" has more than one connected component...
+        if (ncomp>1) {
+            //for each fragment, if it is in the correct cluster...
+            for (ifrag=0; ifrag<nfrag; ifrag++) if (cluster_id[ifrag]==iclus) {
+                icomp=comps[mapping[ifrag]];
+                //reassign clusters as follows: if icomp is zero (the first component), leave alone
+                //otherwise it belongs to one of (ncomp-1) new clusters, numbered (nclusters) thru (nclusters + ncomp - 2)
+                if (icomp>0) cluster_id[ifrag]=nclusters+icomp-1;
+            }
+            //we just added (ncomp-1) additional clusters.
+            nclusters+=ncomp-1;
+        }
+        iclus++;
+    }
+    //since the number of clusters may have changed, need to reallocate "info"
+    info=(cluster_info *) checkrealloc(info,nclusters,sizeof(cluster_info));
     free(transtemplates);
     free(assigned);
+    free(comps);
 }
 
 
@@ -551,7 +586,7 @@ void clusters::sort_clusters(int * old_cluster_id)
 //assume they are already sorted.
 void clusters::report(long int iframe,FILE * output)
 {
-    int iclus,ifrag,itmpfrag;
+    int iclus,ifrag;
     //cluster_info * * sorted_clusters;
     //sorted_clusters=(cluster_info * *) checkalloc(nclusters,sizeof(cluster_info *));
     //for (iclus=0; iclus<nclusters; iclus++) sorted_clusters[iclus]=&info[iclus];
@@ -560,14 +595,7 @@ void clusters::report(long int iframe,FILE * output)
     //find the min distance between
     //Can we get away with hiding the empty clusters?
     for (iclus=0; iclus<nclusters; iclus++) if (info[iclus].size>0) fprintf(output,"cluster %ld %d %d %.3f\n",iframe,iclus+1,info[iclus].size,info[iclus].rmsd);
-    if (mindist!=NULL) for (ifrag=0; ifrag<nfrag; ifrag++) fprintf(output,"fragment %ld %d %d %.3f %.3f %d %c\n",
-	iframe,ifrag,cluster_id[ifrag]+1,mindist[ifrag],angle[ifrag]*RAD_TO_DEG,info[cluster_id[ifrag]].size,yesno(monomers[ifrag]));
-    //print a "yes or no" string identifying which fragments in the template are occupied
-    if (occupied!=NULL) {
-        fprintf(output,"occupied %ld",iframe);
-        for (itmpfrag=0; itmpfrag<ntmpfrag; itmpfrag++) fprintf(output,"%c",yesno(occupied[itmpfrag]));
-        fprintf(output,"\n");
-    }
+    if (mindist!=NULL) for (ifrag=0; ifrag<nfrag; ifrag++) fprintf(output,"fragment %ld %d %d %.3f %.3f\n",iframe,ifrag,cluster_id[ifrag]+1,mindist[ifrag],angle[ifrag]*RAD_TO_DEG);
 }
 
 void clusters::identify_edge_frags(int pbc, double halfboxsize, double boxsize, double * tmpcenter, bool * is_edge)
@@ -616,7 +644,7 @@ void clusters::get_mindist(int pbc, double halfboxsize, double boxsize, double *
     int iclus,ifrag,jfrag,itmpfrag,k;
     double * transtemplate_center;
     double * transtemplate_orient;
-    //bool * occupied;
+    bool * occupied;
     double rotmatrix[3][3],v[3],q[4];
 
     transtemplate_center=(double *) checkalloc(3*ntmpfrag,sizeof(double));
@@ -638,23 +666,17 @@ void clusters::get_mindist(int pbc, double halfboxsize, double boxsize, double *
     angle=(double *) checkalloc(nfrag,sizeof(double));
     for (ifrag=0; ifrag<nfrag; ifrag++) {
         mindist[ifrag]=1e20;
-        angle[ifrag]=0; //right now it is cos(angle/2); initially set to cos(pi/2)=0, corresponding to angle 180 degrees
+        angle[ifrag]=M_PI;
     }
-    if (info[0].size<ntmpfrag) {
-        for (ifrag=0; ifrag<nfrag; ifrag++) //if (cluster_id[ifrag]!=0)
-            for (itmpfrag=0; itmpfrag<ntmpfrag; itmpfrag++) if (!occupied[itmpfrag]) { //not largest cluster
-               d=pbc_distance2(pbc,halfboxsize,boxsize,&center[3*ifrag],&transtemplate_center[3*itmpfrag]);
-               //if (d<info[cluster_id[jfrag]].mindist) info[cluster_id[jfrag]].mindist=d;
-               if (d<mindist[ifrag]) {
-                   mindist[ifrag]=d;
-                   angle[ifrag]=dist(&orient[4*ifrag],&transtemplate_orient[4*itmpfrag]);
-               }
+    for (ifrag=0; ifrag<nfrag; ifrag++) //if (cluster_id[ifrag]!=0)
+        for (itmpfrag=0; itmpfrag<ntmpfrag; itmpfrag++) if (!occupied[itmpfrag]) { //not largest cluster
+            d=pbc_distance2(pbc,halfboxsize,boxsize,&center[3*ifrag],&transtemplate_center[3*itmpfrag]);
+            //if (d<info[cluster_id[jfrag]].mindist) info[cluster_id[jfrag]].mindist=d;
+            if (d<mindist[ifrag]) {
+                mindist[ifrag]=d;
+                angle[ifrag]=dist(&orient[4*ifrag],&transtemplate_orient[4*itmpfrag]);
             }
-    } else { //If the cluster is complete, just put the distance between each fragment and its assigned template fragment.
-        for (ifrag=0; ifrag<nfrag; ifrag++) if (cluster_id[ifrag]==0) {
-            mindist[ifrag]=pbc_distance2(pbc,halfboxsize,boxsize,&center[3*ifrag],&transtemplate_center[3*mapping[ifrag]]);
-            angle[ifrag]=dist(&orient[4*ifrag],&transtemplate_orient[4*mapping[ifrag]]);
-        }
+
     }
     //for (iclus=0; iclus<nclusters; iclus++) info[iclus].mindist=sqrt(info[iclus].mindist);
     for (ifrag=0; ifrag<nfrag; ifrag++) {
@@ -685,23 +707,6 @@ void clusters::write_pdb_frame(long long int frame, double * center, FILE * outp
     fprintf(output,"END\n");
 }
 
-void clusters::identify_monomers(bool pbc, double boxsize, double halfboxsize, double * center, double cutoff)
-{
-    long int ifrag, jfrag;
-    double d,cutoff2;
-    cutoff2=cutoff*cutoff;
-    monomers=(bool *) checkalloc(nfrag,sizeof(bool));
-    for (ifrag=0; ifrag<nfrag; ifrag++) monomers[ifrag]=true;
-    for (ifrag=0; ifrag<nfrag; ifrag++)
-	for (jfrag=ifrag+1; jfrag<nfrag; jfrag++) {
-            d=pbc_distance2(pbc,halfboxsize,boxsize,&center[3*ifrag],&center[3*jfrag]);
-            if (d<cutoff2) {
-                 monomers[ifrag]=false;
-                 monomers[jfrag]=false;
-            }
-       }
-}
-           
 void clusters::write_xyz_frame(long long int frame, double * center, FILE * output)
 {
     int ifrag;
